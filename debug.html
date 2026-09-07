@@ -99,11 +99,13 @@
   <div class="test-btns">
     <button data-focus class="btn btn-sm" id="btn-test-avdb">测试 AVDB</button>
     <button data-focus class="btn btn-sm" id="btn-test-115">测试 115</button>
-    <button data-focus class="btn btn-sm" id="btn-test-cdn">测试 CDN</button>
+    <button data-focus class="btn btn-sm" id="btn-test-cdn">测试 CDN(ant)</button>
+    <button data-focus class="btn btn-sm" style="background:rgba(251,191,36,.15);color:#fbbf24" id="btn-test-fetch">WebView fetch测试</button>
     <button data-focus class="btn btn-sm btn-ghost" id="btn-copy">复制日志</button>
     <button data-focus class="btn btn-sm btn-ghost" id="btn-clear">清空</button>
   </div>
   <div id="test-results" style="padding: 0 16px 8px; display:flex; gap:6px; flex-wrap:wrap;"></div>
+
 
   <!-- 实时日志面板 -->
   <div id="log-panel">
@@ -207,6 +209,7 @@
     document.getElementById('btn-test-avdb').addEventListener('click', testAVDB);
     document.getElementById('btn-test-115').addEventListener('click', test115);
     document.getElementById('btn-test-cdn').addEventListener('click', testCDN);
+    document.getElementById('btn-test-fetch').addEventListener('click', testFetch);
     document.getElementById('btn-copy').addEventListener('click', copyLogs);
     document.getElementById('btn-clear').addEventListener('click', function(){
       Log.clear(); renderLogs();
@@ -258,14 +261,53 @@
     var btn = document.getElementById('btn-test-cdn');
     btn.disabled = true; btn.textContent = '测试中…';
     var cdnUrl = 'https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/manifest.json';
-    Log.info('DIAG', '测试 CDN: ' + cdnUrl);
+    Log.info('DIAG', '测试 CDN(ant.request): ' + cdnUrl);
     ant.request({ url: cdnUrl, method: 'GET', timeout: 10000 }).then(function(res){
-      showResult('cdn', true, '✅ CDN 可达 ' + res.statusCode);
-      Log.info('DIAG', 'CDN 正常 ' + res.statusCode);
+      showResult('cdn', true, '✅ CDN(ant) 可达 ' + res.statusCode);
+      Log.info('DIAG', 'CDN ant.request 正常 ' + res.statusCode);
     }).catch(function(e){
-      showResult('cdn', false, '❌ CDN: ' + e.message);
-      Log.error('DIAG', 'CDN 失败: ' + e.message);
-    }).then(function(){ btn.disabled = false; btn.textContent = '测试 CDN'; });
+      showResult('cdn', false, '❌ CDN(ant): ' + e.message);
+      Log.error('DIAG', 'CDN ant.request 失败: ' + e.message);
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试 CDN(ant)'; });
+  }
+
+  /* WebView 原生 fetch 测试
+     目的：区分 ant.request SDK 问题 vs 设备网络问题
+     - fetch 成功 + ant.request 失败 → SDK/allowlist 问题
+     - fetch 失败 + ant.request 失败 → 设备无外网 / VPN / 代理问题
+  */
+  function testFetch() {
+    var btn = document.getElementById('btn-test-fetch');
+    btn.disabled = true; btn.textContent = '测试中…';
+    var testUrl = 'https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/manifest.json';
+    Log.info('DIAG', '开始 WebView fetch 测试: ' + testUrl);
+    var t0 = Date.now();
+    fetch(testUrl, { method: 'GET', mode: 'cors', cache: 'no-store' })
+      .then(function(res){
+        var ms = Date.now() - t0;
+        Log.info('DIAG', 'WebView fetch 成功: HTTP ' + res.status + ' [' + ms + 'ms]');
+        showResult('fetch', true, '✅ WebView fetch 可达 HTTP ' + res.status + ' (' + ms + 'ms)');
+        Log.warn('DIAG', '→ ant.request 失败但 fetch 成功：是 ant.request SDK 或 allowlist 问题！');
+      })
+      .catch(function(e){
+        var ms = Date.now() - t0;
+        Log.error('DIAG', 'WebView fetch 也失败 [' + ms + 'ms]: ' + e.message);
+        showResult('fetch', false, '❌ WebView fetch 失败: ' + e.message);
+        Log.warn('DIAG', '→ fetch 和 ant.request 都失败：设备网络/VPN/代理问题，与代码无关！');
+      })
+      .then(function(){ btn.disabled = false; btn.textContent = 'WebView fetch测试'; });
+
+    // 同时测试 AVDB URL（如果已配置）
+    if (Cfg.data.avdbUrl) {
+      var avdbTest = Cfg.data.avdbUrl + '/api/v1/stats';
+      Log.info('DIAG', 'WebView fetch 测试 AVDB: ' + avdbTest);
+      fetch(avdbTest, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+        .then(function(res){
+          Log.info('DIAG', 'WebView fetch AVDB 响应 type=' + res.type + ' status=' + res.status);
+        }).catch(function(e){
+          Log.error('DIAG', 'WebView fetch AVDB 失败: ' + e.message);
+        });
+    }
   }
 
   function copyLogs() {
@@ -279,6 +321,7 @@
     });
   }
 })();
+
 </script>
 </body>
 </html>
