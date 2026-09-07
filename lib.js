@@ -86,12 +86,13 @@
     };
 
     var data = {
-      avdbUrl:       'http://my.gray728.top:18168',
-      avdbKey:       'MAS2RIVNrJkFdBgC5MBf7PhTwyCFx80H',
+      avdbUrl:       '',
+      avdbKey:       '',
       p115Cookie:    '',
-      p115FolderCid: '3511237427370919738',
-      p115SavePath:  '/18+/'
+      p115FolderCid: '',
+      p115SavePath:  ''
     };
+
 
     function load() {
       return Promise.all([
