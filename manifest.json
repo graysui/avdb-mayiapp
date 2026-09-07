@@ -1,20 +1,10 @@
 {
   "appId": "com.avdb.miniapp",
   "name": "AVDB",
-  "version": "1.0.0",
-  "versionCode": 1,
+  "version": "1.0.1",
+  "versionCode": 2,
   "renderer": "webview",
   "entry": "https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/index.html",
   "description": "连接 AVDB：浏览 JavDB 在线资源、本地资源中心，一键缓存到 115，直链播放",
-  "permissions": ["ui", "storage", "navigate", "network", "player"],
-  "network": {
-    "allowlist": [
-      "my.gray728.top",
-      "cdn.jsdelivr.net",
-      "proapi.115.com",
-      "uplb.115.com",
-      "cdnfhnfile.115.com",
-      "115.com"
-    ]
-  }
+  "permissions": ["ui", "storage", "navigate", "network", "player"]
 }

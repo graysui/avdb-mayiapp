@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>诊断日志 · AVDB</title>
+<link rel="stylesheet" href="./theme.css"/>
+<style>
+#app-main { padding: 0; }
+
+/* 诊断卡片区 */
+.diag-section { padding: 12px 16px 0; }
+.diag-title { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .6px; }
+.diag-grid { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.diag-row { display: flex; gap: 8px; align-items: center; font-size: 12px; background: var(--bg3); border-radius: var(--radius-sm); padding: 8px 10px; }
+.diag-row .k { color: var(--text3); flex-shrink: 0; width: 110px; }
+.diag-row .v { color: var(--text); word-break: break-all; flex: 1; font-family: monospace; }
+.diag-row .ok   { color: var(--success); }
+.diag-row .warn { color: var(--warn); }
+.diag-row .err  { color: var(--danger); }
+
+/* 测试按钮行 */
+.test-btns { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 16px 12px; }
+.test-result { font-size: 11px; padding: 3px 8px; border-radius: var(--radius-sm); }
+.test-result.ok    { background: rgba(52,211,153,.15); color: var(--success); }
+.test-result.error { background: rgba(248,113,113,.15); color: var(--danger); }
+
+/* 日志面板 */
+#log-panel {
+  margin: 0 16px 16px;
+  background: #0a0c10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+#log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+#log-entries {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+#log-entries::-webkit-scrollbar { width: 3px; }
+#log-entries::-webkit-scrollbar-thumb { background: var(--border); }
+.log-line {
+  display: flex;
+  gap: 6px;
+  padding: 1px 10px;
+  transition: background .1s;
+}
+.log-line:hover { background: rgba(255,255,255,.03); }
+.log-t    { color: var(--text3); flex-shrink: 0; user-select: none; }
+.log-tag  { flex-shrink: 0; width: 36px; text-align: center; border-radius: 2px; }
+.log-msg  { color: var(--text2); word-break: break-all; flex: 1; }
+.level-INFO  .log-tag { background: rgba(108,142,245,.2); color: var(--accent); }
+.level-WARN  .log-tag { background: rgba(251,191,36,.2);  color: var(--warn); }
+.level-ERROR .log-tag { background: rgba(248,113,113,.2); color: var(--danger); }
+.level-ERROR .log-msg { color: var(--danger); }
+</style>
+</head>
+<body>
+<div id="app-header"></div>
+<div id="app-main">
+
+  <!-- 环境信息 -->
+  <div class="diag-section">
+    <div class="diag-title">🖥 运行环境</div>
+    <div class="diag-grid" id="env-grid">
+      <div class="diag-row"><span class="k">ant SDK</span><span class="v" id="d-sdk">检测中…</span></div>
+      <div class="diag-row"><span class="k">platform</span><span class="v" id="d-platform">–</span></div>
+      <div class="diag-row"><span class="k">isTV</span><span class="v" id="d-tv">–</span></div>
+      <div class="diag-row"><span class="k">devMode</span><span class="v" id="d-dev">–</span></div>
+      <div class="diag-row"><span class="k">sdkVersion</span><span class="v" id="d-sdkver">–</span></div>
+      <div class="diag-row"><span class="k">当前 URL</span><span class="v" id="d-url" style="font-size:10px"></span></div>
+    </div>
+
+    <div class="diag-title">⚙️ 当前配置</div>
+    <div class="diag-grid" id="cfg-grid">
+      <div class="diag-row"><span class="k">AVDB 地址</span><span class="v" id="d-avdb-url">–</span></div>
+      <div class="diag-row"><span class="k">API Key</span><span class="v" id="d-avdb-key">–</span></div>
+      <div class="diag-row"><span class="k">115 Cookie</span><span class="v" id="d-p115">–</span></div>
+      <div class="diag-row"><span class="k">115 目录CID</span><span class="v" id="d-folder-cid">–</span></div>
+    </div>
+  </div>
+
+  <!-- 诊断测试按钮 -->
+  <div class="test-btns">
+    <button data-focus class="btn btn-sm" id="btn-test-avdb">测试 AVDB</button>
+    <button data-focus class="btn btn-sm" id="btn-test-115">测试 115</button>
+    <button data-focus class="btn btn-sm" id="btn-test-cdn">测试 CDN</button>
+    <button data-focus class="btn btn-sm btn-ghost" id="btn-copy">复制日志</button>
+    <button data-focus class="btn btn-sm btn-ghost" id="btn-clear">清空</button>
+  </div>
+  <div id="test-results" style="padding: 0 16px 8px; display:flex; gap:6px; flex-wrap:wrap;"></div>
+
+  <!-- 实时日志面板 -->
+  <div id="log-panel">
+    <div id="log-header">
+      📋 请求日志
+      <span id="log-count" style="font-weight:400;color:var(--text3);font-size:11px">0 条</span>
+    </div>
+    <div id="log-entries">
+      <div class="log-line"><span class="log-t">–</span><span class="log-msg" style="color:var(--text3)">等待日志…打开其他页面会自动记录请求</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="./lib.js"></script>
+<script>
+(function(){
+  'use strict';
+  var Cfg = AVDBApp.Cfg, AVDB = AVDBApp.AVDB, P115 = AVDBApp.P115, Log = AVDBApp.Log, UI = AVDBApp.UI;
+
+  Cfg.load().then(function(){
+    UI.renderHeader('settings');
+    UI.initTvFocus();
+    fillEnv();
+    fillCfg();
+    startLogStream();
+    bindButtons();
+  });
+
+  /* ---- 环境信息 ---- */
+  function fillEnv() {
+    setText('d-url', location.href);
+    if (typeof window.ant === 'undefined') {
+      setText('d-sdk', 'ⓘ 未检测到 ant（浏览器模式）', 'warn');
+      return;
+    }
+    setText('d-sdk', '✅ 已注入', 'ok');
+    try {
+      ant.env.getSystemInfo().then(function(info){
+        setText('d-platform', info.platform || '–');
+        setText('d-tv',      String(info.isTV));
+        setText('d-dev',     String(info.devMode), info.devMode ? 'warn' : '');
+        setText('d-sdkver',  info.sdkVersion || '–');
+        Log.info('ENV', JSON.stringify(info));
+      });
+    } catch(e) {
+      setText('d-platform', 'getSystemInfo 失败: ' + e.message, 'err');
+    }
+  }
+
+  /* ---- 配置信息 ---- */
+  function fillCfg() {
+    var d = Cfg.data;
+    setText('d-avdb-url', d.avdbUrl || '（未设置）', d.avdbUrl ? '' : 'warn');
+    setText('d-avdb-key', d.avdbKey ? d.avdbKey.slice(0,8) + '…' : '（未设置）', d.avdbKey ? '' : 'warn');
+    var has115 = Cfg.has115Cookie();
+    setText('d-p115', has115 ? '✅ UID/CID/SEID 已填写' : '❌ 未填写', has115 ? 'ok' : 'err');
+    setText('d-folder-cid', d.p115FolderCid || '–');
+  }
+
+  function setText(id, text, cls) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'v' + (cls ? ' ' + cls : '');
+  }
+
+  /* ---- 日志流 ---- */
+  function startLogStream() {
+    renderLogs();
+    Log.subscribe(function(){ renderLogs(); });
+  }
+
+  function renderLogs() {
+    var entries = Log.getAll();
+    var panel = document.getElementById('log-entries');
+    var count = document.getElementById('log-count');
+    if (count) count.textContent = entries.length + ' 条';
+    if (!panel) return;
+    if (!entries.length) {
+      panel.innerHTML = '<div class="log-line"><span class="log-msg" style="color:var(--text3)">暂无日志</span></div>';
+      return;
+    }
+    panel.innerHTML = entries.map(function(e){
+      return '<div class="log-line level-' + e.level + '">' +
+        '<span class="log-t">' + e.t + '</span>' +
+        '<span class="log-tag">' + e.tag + '</span>' +
+        '<span class="log-msg">' + esc(e.msg) + '</span>' +
+      '</div>';
+    }).join('');
+    // 滚动到底部
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ---- 诊断按钮 ---- */
+  function bindButtons() {
+    document.getElementById('btn-test-avdb').addEventListener('click', testAVDB);
+    document.getElementById('btn-test-115').addEventListener('click', test115);
+    document.getElementById('btn-test-cdn').addEventListener('click', testCDN);
+    document.getElementById('btn-copy').addEventListener('click', copyLogs);
+    document.getElementById('btn-clear').addEventListener('click', function(){
+      Log.clear(); renderLogs();
+    });
+  }
+
+  function showResult(id, ok, msg) {
+    var area = document.getElementById('test-results');
+    var el = document.getElementById('tr-' + id) || document.createElement('span');
+    el.id = 'tr-' + id;
+    el.className = 'test-result ' + (ok ? 'ok' : 'error');
+    el.textContent = msg;
+    if (!el.parentNode) area.appendChild(el);
+  }
+
+  function testAVDB() {
+    var btn = document.getElementById('btn-test-avdb');
+    btn.disabled = true; btn.textContent = '测试中…';
+    Log.info('DIAG', '开始测试 AVDB: ' + Cfg.data.avdbUrl);
+    AVDB.getStats().then(function(data){
+      var n = data && (data.article_count || data.articles_count || data.total_articles || '?');
+      showResult('avdb', true, '✅ AVDB 正常，资源: ' + n);
+      Log.info('DIAG', 'AVDB测试通过，资源数: ' + n);
+    }).catch(function(e){
+      showResult('avdb', false, '❌ AVDB: ' + e.message);
+      Log.error('DIAG', 'AVDB测试失败: ' + e.message);
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试 AVDB'; });
+  }
+
+  function test115() {
+    if (!Cfg.has115Cookie()) {
+      showResult('115', false, '❌ 115 Cookie 未填写');
+      return;
+    }
+    var btn = document.getElementById('btn-test-115');
+    btn.disabled = true; btn.textContent = '测试中…';
+    Log.info('DIAG', '开始测试 115 Cookie');
+    P115.testCookie().then(function(data){
+      var cnt = data && data.data && data.data.count;
+      showResult('115', true, '✅ 115 Cookie 有效' + (cnt != null ? '，文件: ' + cnt : ''));
+      Log.info('DIAG', '115 Cookie 有效');
+    }).catch(function(e){
+      showResult('115', false, '❌ 115: ' + e.message);
+      Log.error('DIAG', '115 Cookie 失败: ' + e.message);
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试 115'; });
+  }
+
+  function testCDN() {
+    var btn = document.getElementById('btn-test-cdn');
+    btn.disabled = true; btn.textContent = '测试中…';
+    var cdnUrl = 'https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/manifest.json';
+    Log.info('DIAG', '测试 CDN: ' + cdnUrl);
+    ant.request({ url: cdnUrl, method: 'GET', timeout: 10000 }).then(function(res){
+      showResult('cdn', true, '✅ CDN 可达 ' + res.statusCode);
+      Log.info('DIAG', 'CDN 正常 ' + res.statusCode);
+    }).catch(function(e){
+      showResult('cdn', false, '❌ CDN: ' + e.message);
+      Log.error('DIAG', 'CDN 失败: ' + e.message);
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试 CDN'; });
+  }
+
+  function copyLogs() {
+    var text = Log.getAll().map(function(e){
+      return '[' + e.t + '] ' + e.level + ' [' + e.tag + '] ' + e.msg;
+    }).join('\n');
+    ant.clipboard.set(text).then(function(){
+      UI.toast('✅ 日志已复制到剪贴板（' + Log.getAll().length + ' 条）');
+    }).catch(function(e){
+      UI.toast('复制失败: ' + UI.errText(e));
+    });
+  }
+})();
+</script>
+</body>
+</html>

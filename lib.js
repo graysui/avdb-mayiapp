@@ -12,6 +12,68 @@
   'use strict';
 
   /* ================================================================
+     Log — 请求日志 & 诊断模块
+     ================================================================ */
+  var Log = (function () {
+    var MAX = 80;
+    var entries = [];          // 环形日志
+    var listeners = [];        // 页面订阅
+
+    function ts() { return new Date().toISOString().slice(11, 23); }
+
+    function push(entry) {
+      entries.push(entry);
+      if (entries.length > MAX) entries.shift();
+      listeners.forEach(function (fn) { try { fn(entry); } catch (e) {} });
+    }
+
+    function info(tag, msg) {
+      push({ t: ts(), level: 'INFO', tag: tag, msg: String(msg) });
+    }
+    function warn(tag, msg) {
+      push({ t: ts(), level: 'WARN', tag: tag, msg: String(msg) });
+    }
+    function error(tag, msg) {
+      push({ t: ts(), level: 'ERROR', tag: tag, msg: String(msg) });
+    }
+
+    function getAll() { return entries.slice(); }
+    function clear()  { entries = []; }
+    function subscribe(fn) { listeners.push(fn); }
+    function unsubscribe(fn) { listeners = listeners.filter(function (f) { return f !== fn; }); }
+
+    /* ---- 拦截 ant.request，自动记录每次网络调用 ---- */
+    function installInterceptor() {
+      if (typeof window.ant === 'undefined' || !ant.request || ant.request.__logged) return;
+      var _orig = ant.request.bind(ant);
+      ant.request = function (opts) {
+        var label = (opts.method || 'GET') + ' ' + (opts.url || '');
+        var t0 = Date.now();
+        info('NET', '→ ' + label);
+        return _orig(opts).then(function (res) {
+          var ms = Date.now() - t0;
+          var preview = '';
+          try {
+            var body = typeof res.data === 'string' ? res.data.slice(0, 120) : JSON.stringify(res.data).slice(0, 120);
+            preview = body;
+          } catch (e) {}
+          info('NET', '← ' + res.statusCode + ' ' + label + ' [' + ms + 'ms] ' + preview);
+          return res;
+        }, function (e) {
+          var ms = Date.now() - t0;
+          error('NET', '✗ ' + label + ' [' + ms + 'ms] ' + (e && e.message || String(e)));
+          throw e;
+        });
+      };
+      ant.request.__logged = true;
+      info('LOG', '请求拦截器已安装');
+    }
+
+    return { info: info, warn: warn, error: error, getAll: getAll, clear: clear, subscribe: subscribe, unsubscribe: unsubscribe, installInterceptor: installInterceptor };
+  })();
+
+
+  /* ================================================================
      Cfg — 配置管理
      ================================================================ */
   var Cfg = (function () {
@@ -572,6 +634,9 @@
   /* ================================================================
      导出
      ================================================================ */
-  window.AVDBApp = { Cfg: Cfg, AVDB: AVDB, P115: P115, Player: Player, UI: UI };
+  // 拦截器在 ant 可用时立即安装
+  if (typeof window.ant !== 'undefined') Log.installInterceptor();
+
+  window.AVDBApp = { Cfg: Cfg, AVDB: AVDB, P115: P115, Player: Player, UI: UI, Log: Log };
 
 })();
