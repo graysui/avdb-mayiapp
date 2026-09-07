@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>AVDB</title>
+<link rel="stylesheet" href="./theme.css"/>
+<style>
+.stats-row { padding: 16px 16px 0; }
+.page-section { padding: 16px 16px 0; }
+.section-title { font-size:15px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+.section-title .more { font-size:12px; font-weight:400; color:var(--accent); margin-left:auto; cursor:pointer; text-decoration:none; }
+.rail-wrap { padding: 0 16px 4px; }
+</style>
+</head>
+<body>
+<div id="app-header"></div>
+<div id="app-main">
+  <div class="loading-row"><div class="spinner"></div>正在连接 AVDB…</div>
+</div>
+
+<script src="./lib.js"></script>
+<script>
+(function(){
+  'use strict';
+  var Cfg = AVDBApp.Cfg, AVDB = AVDBApp.AVDB, UI = AVDBApp.UI;
+  var main = document.getElementById('app-main');
+
+  Cfg.load().then(function(){
+    UI.renderHeader('index');
+    UI.initTvFocus();
+    if (!UI.checkConfig(main)) return;
+    main.innerHTML =
+      '<div id="stats-row" class="stats-row"><div class="sk sk-line" style="height:64px;border-radius:10px"></div></div>' +
+      '<div class="page-section"><div class="section-title">🆕 最新影片<a data-focus class="more" href="online.html">查看更多</a></div>' +
+      '<div id="rail-latest" class="rail-wrap">' + UI.skeleton(8, 'rail') + '</div></div>' +
+      '<div class="page-section"><div class="section-title">🏆 日排行<a data-focus class="more" href="online.html#rank">查看更多</a></div>' +
+      '<div id="rail-rank" class="rail-wrap">' + UI.skeleton(8, 'rail') + '</div></div>';
+
+    // 并行加载
+    Promise.all([
+      AVDB.getStats(),
+      AVDB.getLatest(1, 12),
+      AVDB.getRankings('daily')
+    ]).then(function(results){
+      renderStats(results[0]);
+      renderRail('rail-latest', normalizeList(results[1]));
+      renderRail('rail-rank',   normalizeRank(results[2]));
+    }).catch(function(e){
+      main.innerHTML = UI.stateHtml('⚠️', '加载失败', UI.esc(UI.errText(e)),
+        '<button data-focus class="btn btn-primary" onclick="location.reload()">重试</button>');
+    });
+  });
+
+  function renderStats(data) {
+    var row = document.getElementById('stats-row');
+    if (!row) return;
+    if (!data) { row.innerHTML = ''; return; }
+    var items = [
+      { num: fmt(data.article_count || data.articles_count || data.total_articles), lbl: '本地资源' },
+      { num: fmt(data.subscription_count || data.subscriptions), lbl: '订阅中' },
+      { num: fmt(data.emby_count || data.emby_items), lbl: 'Emby入库' },
+      { num: fmt(data.download_count || data.downloads), lbl: '下载任务' }
+    ];
+    row.innerHTML = '<div class="stats-row">' + items.map(function(i){
+      return '<div class="stat-card"><div class="num">' + (i.num||'–') +
+        '</div><div class="lbl">' + i.lbl + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function fmt(n) {
+    if (n == null) return null;
+    var num = Number(n);
+    return isNaN(num) ? String(n) : num >= 1000 ? (num/1000).toFixed(1)+'k' : String(num);
+  }
+
+  function normalizeList(data) {
+    if (!data) return [];
+    var list = Array.isArray(data) ? data : (data.list || data.items || data.movies || []);
+    return list.map(function(m){ return {
+      _id:    m.id || m.movie_id || '',
+      title:  m.title || m.number || '',
+      number: m.number || '',
+      cover:  m.cover || m.preview_url || '',
+      score:  m.score || ''
+    }; });
+  }
+
+  function normalizeRank(data) {
+    if (!data) return [];
+    var list = Array.isArray(data) ? data : (data.list || data.items || data.movies || []);
+    return list.slice(0, 12).map(function(m,i){ return {
+      _id:    m.id || m.movie_id || '',
+      title:  (i+1) + '. ' + (m.title || m.number || ''),
+      number: m.number || '',
+      cover:  m.cover || m.preview_url || '',
+      score:  m.score || ''
+    }; });
+  }
+
+  function renderRail(id, list) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (!list.length) { el.innerHTML = '<div class="hint">暂无数据</div>'; return; }
+    el.innerHTML = '<div class="rail">' + list.map(function(item,i){
+      return '<button data-focus class="card" data-id="' + UI.esc(item._id) + '">' +
+        UI.posterHtml(item) +
+        '<div class="card-name">' + UI.esc(item.title) + '</div>' +
+        (item.number ? '<div class="card-sub">' + UI.esc(item.number) + '</div>' : '') +
+        '</button>';
+    }).join('') + '</div>';
+    el.querySelectorAll('.card').forEach(function(btn){
+      btn.addEventListener('click', function(){ UI.goMovie(btn.dataset.id); });
+    });
+  }
+})();
+</script>
+</body>
+</html>

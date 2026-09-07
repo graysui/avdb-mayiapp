@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>影片详情 · AVDB</title>
+<link rel="stylesheet" href="./theme.css"/>
+<style>
+.back-btn { background:none; border:none; color:var(--accent); font-size:14px; cursor:pointer; padding:4px 0; }
+.detail-hero { display:flex; gap:14px; padding:14px 16px; }
+.detail-hero .cover { flex-shrink:0; width:120px; aspect-ratio:2/3; border-radius:var(--radius); overflow:hidden; background:var(--bg3); }
+.detail-hero .cover img { width:100%; height:100%; object-fit:cover; display:block; }
+.detail-hero .info { flex:1; min-width:0; }
+.d-title { font-size:16px; font-weight:700; line-height:1.4; margin-bottom:6px; }
+.d-number { font-size:12px; color:var(--accent); font-family:monospace; margin-bottom:8px; }
+.meta-row { display:flex; gap:6px; font-size:12px; margin-bottom:3px; }
+.meta-row .k { color:var(--text3); width:36px; flex-shrink:0; }
+.meta-row .v { color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.section-hd { font-size:14px; font-weight:600; color:var(--text); padding:14px 16px 8px; border-top:1px solid var(--border); margin-top:4px; display:flex; align-items:center; gap:8px; }
+.section-hd .sec-action { margin-left:auto; font-size:12px; font-weight:400; }
+.magnets-list { padding:0 16px; }
+.m-item { background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); padding:11px 12px; margin-bottom:8px; cursor:pointer; transition:border-color .15s; }
+.m-item:hover, .m-item.sel { border-color:var(--accent); background:rgba(108,142,245,.08); }
+.m-name { font-size:12px; color:var(--text); margin-bottom:5px; line-height:1.4; word-break:break-all; }
+.m-meta { display:flex; flex-wrap:wrap; gap:5px; }
+.m-tag { font-size:10px; padding:1px 6px; border-radius:3px; background:var(--surface); color:var(--text2); }
+.m-tag.hd  { color:var(--accent); }
+.m-tag.sub { color:var(--success); }
+.m-tag.sz  { color:var(--text2); }
+.action-bar { display:flex; gap:8px; flex-wrap:wrap; padding:12px 16px; }
+.file-item { background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); padding:11px 12px; margin-bottom:8px; }
+.file-name { font-size:12px; color:var(--text); margin-bottom:6px; word-break:break-all; line-height:1.4; }
+.file-meta { font-size:11px; color:var(--text3); margin-bottom:8px; }
+</style>
+</head>
+<body>
+<div id="app-header"></div>
+<div id="app-main">
+  <div class="loading-row"><div class="spinner"></div>加载影片信息…</div>
+</div>
+
+<script src="./lib.js"></script>
+<script>
+(function(){
+  'use strict';
+  var Cfg = AVDBApp.Cfg, AVDB = AVDBApp.AVDB, P115 = AVDBApp.P115, Player = AVDBApp.Player, UI = AVDBApp.UI;
+  var main = document.getElementById('app-main');
+  var movieId = UI.qs('id');
+
+  // 状态
+  var state = {
+    movie: null,
+    magnets: [],
+    commentRes: [],
+    selMagnet: null,  // 当前选中的磁力
+    sentToast: false
+  };
+
+  Cfg.load().then(function(){
+    UI.renderHeader('online');
+    UI.initTvFocus();
+    if (!movieId) { main.innerHTML = UI.stateHtml('❓', '参数错误', '未找到影片 ID'); return; }
+    if (!UI.checkConfig(main)) return;
+    loadMovie();
+  });
+
+  /* ---- 加载影片详情 ---- */
+  function loadMovie() {
+    main.innerHTML = '<div class="loading-row"><div class="spinner"></div>加载中…</div>';
+    AVDB.getMovie(movieId).then(function(data){
+      state.movie = data;
+      renderPage();
+      // 并行加载磁力和评论区资源
+      loadMagnets();
+      loadCommentResources();
+    }).catch(function(e){
+      main.innerHTML = UI.stateHtml('⚠️', '加载失败', UI.esc(UI.errText(e)),
+        '<button data-focus class="btn btn-primary" onclick="loadMovie()">重试</button>');
+    });
+  }
+
+  /* ---- 渲染主结构 ---- */
+  function renderPage() {
+    var m = state.movie;
+    if (!m) return;
+    var cover = m.cover || m.preview_url || '';
+    var title = m.title || m.number || '';
+    var number = m.number || m.code || '';
+    var score = m.score ? '⭐ ' + m.score : '';
+    var date  = m.date || m.release_date || '';
+    var actors = (m.actors || m.actress || []).map(function(a){ return a.name || a; }).join('、') || '–';
+    var tags   = (m.tags || m.genres || []).map(function(t){ return t.name || t; }).join(' ') || '';
+    var maker  = (m.maker && m.maker.name) || m.maker || '–';
+
+    main.innerHTML =
+      '<button data-focus class="back-btn" style="margin:10px 16px 0" onclick="history.back()">← 返回</button>' +
+      '<div class="detail-hero">' +
+        '<div class="cover">' +
+          (cover ? '<img src="' + UI.esc(cover) + '" alt="" onerror="this.style.display=\'none\'"/>' : '') +
+        '</div>' +
+        '<div class="info">' +
+          '<div class="d-title">' + UI.esc(title) + '</div>' +
+          '<div class="d-number">' + UI.esc(number) + '</div>' +
+          (score ? '<div class="meta-row"><span class="k">评分</span><span class="v">' + UI.esc(score) + '</span></div>' : '') +
+          (date  ? '<div class="meta-row"><span class="k">日期</span><span class="v">' + UI.esc(date)  + '</span></div>' : '') +
+          '<div class="meta-row"><span class="k">片商</span><span class="v">' + UI.esc(maker) + '</span></div>' +
+          '<div class="meta-row"><span class="k">演员</span><span class="v" title="' + UI.esc(actors) + '">' + UI.esc(actors) + '</span></div>' +
+        '</div>' +
+      '</div>' +
+      (tags ? '<div style="padding:0 16px 10px;font-size:11px;color:var(--text3);">' + UI.esc(tags) + '</div>' : '') +
+      // 磁力列表区
+      '<div class="section-hd">🧲 磁力链接' +
+        '<span class="sec-action" id="magnet-status">加载中…</span>' +
+      '</div>' +
+      '<div id="magnets-list" class="magnets-list">' + UI.loadingRow() + '</div>' +
+      // 发送 & 播放操作区
+      '<div class="action-bar" id="action-bar" style="display:none">' +
+        '<button data-focus class="btn btn-primary" id="btn-send115">📤 发送到115</button>' +
+      '</div>' +
+      // 评论区资源
+      '<div class="section-hd">💬 评论区资源' +
+        '<button data-focus class="btn btn-sm sec-action" id="btn-sync-comment">同步</button>' +
+      '</div>' +
+      '<div id="comment-list" class="magnets-list">' + UI.loadingRow() + '</div>' +
+      // 115 文件查找区
+      '<div class="section-hd">📂 115 文件' +
+        '<button data-focus class="btn btn-sm sec-action" id="btn-find-file">查找文件</button>' +
+      '</div>' +
+      '<div id="files-list" class="magnets-list"><div class="hint">点击「查找文件」在115中搜索此影片</div></div>';
+
+    bindActions();
+  }
+
+  /* ---- 绑定动作按钮 ---- */
+  function bindActions() {
+    // 发送到 115
+    var btnSend = document.getElementById('btn-send115');
+    if (btnSend) btnSend.addEventListener('click', sendTo115);
+
+    // 同步评论区资源
+    var btnSync = document.getElementById('btn-sync-comment');
+    if (btnSync) btnSync.addEventListener('click', syncComment);
+
+    // 查找 115 文件
+    var btnFind = document.getElementById('btn-find-file');
+    if (btnFind) btnFind.addEventListener('click', find115Files);
+  }
+
+  /* ---- 加载磁力 ---- */
+  function loadMagnets() {
+    AVDB.getMagnets(movieId, state.movie && (state.movie.number || state.movie.code))
+      .then(function(data){
+        state.magnets = normMagnets(data);
+        renderMagnets();
+      }).catch(function(e){
+        var el = document.getElementById('magnets-list');
+        if (el) el.innerHTML = '<div class="hint">磁力加载失败：' + UI.esc(UI.errText(e)) + '</div>';
+        var st = document.getElementById('magnet-status');
+        if (st) st.textContent = '加载失败';
+      });
+  }
+
+  function normMagnets(data) {
+    if (!data) return [];
+    var list = Array.isArray(data) ? data : (data.list || data.magnets || data.items || []);
+    return list.map(function(m){
+      return {
+        name:    m.name || m.title || m.magnet || '',
+        magnet:  m.magnet || m.magnet_link || m.link || '',
+        size:    m.size || m.file_size || 0,
+        isHd:    !!(m.is_hd || m.hd || (m.meta && m.meta.hd)),
+        hasSub:  !!(m.has_subtitle || m.zh_sub || (m.meta && m.meta.zh_sub)),
+        seeders: m.seeders || 0
+      };
+    });
+  }
+
+  function renderMagnets() {
+    var el = document.getElementById('magnets-list');
+    var st = document.getElementById('magnet-status');
+    if (!el) return;
+    if (st) st.textContent = state.magnets.length ? state.magnets.length + ' 条' : '暂无';
+    if (!state.magnets.length) { el.innerHTML = '<div class="hint">暂无磁力资源</div>'; return; }
+    el.innerHTML = state.magnets.map(function(m, i){
+      return '<div class="m-item" data-index="' + i + '" tabindex="0" data-focus>' +
+        '<div class="m-name">' + UI.esc(m.name || m.magnet.slice(0,60)) + '</div>' +
+        '<div class="m-meta">' +
+          (m.isHd ? '<span class="m-tag hd">HD</span>' : '') +
+          (m.hasSub ? '<span class="m-tag sub">字幕</span>' : '') +
+          (m.size ? '<span class="m-tag sz">' + UI.fmtSize(m.size) + '</span>' : '') +
+          (m.seeders ? '<span class="m-tag">↑' + m.seeders + '</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    el.querySelectorAll('.m-item').forEach(function(item){
+      item.addEventListener('click', function(){
+        el.querySelectorAll('.m-item').forEach(function(x){ x.classList.remove('sel'); });
+        item.classList.add('sel');
+        state.selMagnet = state.magnets[Number(item.dataset.index)];
+        document.getElementById('action-bar').style.display = 'flex';
+      });
+    });
+  }
+
+  /* ---- 加载评论区资源 ---- */
+  function loadCommentResources() {
+    AVDB.getCommentResources(movieId).then(function(data){
+      state.commentRes = normCommentRes(data);
+      renderCommentRes();
+    }).catch(function(){
+      var el = document.getElementById('comment-list');
+      if (el) el.innerHTML = '<div class="hint">暂无评论区资源（可点击「同步」获取）</div>';
+    });
+  }
+
+  function normCommentRes(data) {
+    if (!data) return [];
+    var list = Array.isArray(data) ? data : (data.list || data.items || data.resources || []);
+    return list.map(function(r){
+      return {
+        name:   r.name || r.title || '',
+        magnet: r.magnet || r.link || r.url || '',
+        type:   r.type || (String(r.magnet||r.link||'').startsWith('ed2k') ? 'ed2k' : 'magnet'),
+        size:   r.size || 0
+      };
+    });
+  }
+
+  function renderCommentRes() {
+    var el = document.getElementById('comment-list');
+    if (!el) return;
+    if (!state.commentRes.length) { el.innerHTML = '<div class="hint">暂无评论区资源（可点击「同步」获取）</div>'; return; }
+    el.innerHTML = state.commentRes.map(function(r, i){
+      return '<div class="m-item" data-index="' + i + '" data-type="comment" tabindex="0" data-focus>' +
+        '<div class="m-name">' + UI.esc(r.name || r.magnet.slice(0,60)) + '</div>' +
+        '<div class="m-meta">' +
+          '<span class="m-tag">' + UI.esc(r.type.toUpperCase()) + '</span>' +
+          (r.size ? '<span class="m-tag sz">' + UI.fmtSize(r.size) + '</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    el.querySelectorAll('.m-item').forEach(function(item){
+      item.addEventListener('click', function(){
+        el.querySelectorAll('.m-item').forEach(function(x){ x.classList.remove('sel'); });
+        item.classList.add('sel');
+        state.selMagnet = state.commentRes[Number(item.dataset.index)];
+        document.getElementById('action-bar').style.display = 'flex';
+      });
+    });
+  }
+
+  /* ---- 同步评论区 ---- */
+  function syncComment() {
+    var btn = document.getElementById('btn-sync-comment');
+    if (btn) { btn.disabled = true; btn.textContent = '同步中…'; }
+    AVDB.syncCommentResources(movieId)
+      .then(function(){ return AVDB.getCommentResources(movieId); })
+      .then(function(data){
+        state.commentRes = normCommentRes(data);
+        renderCommentRes();
+        UI.toast('评论区资源已同步');
+      }).catch(function(e){
+        UI.toast('同步失败：' + UI.errText(e));
+      }).then(function(){
+        if (btn) { btn.disabled = false; btn.textContent = '同步'; }
+      });
+  }
+
+  /* ---- 发送到 115 ---- */
+  function sendTo115() {
+    if (!state.selMagnet) { UI.toast('请先选择一条磁力资源'); return; }
+    var link = state.selMagnet.magnet || state.selMagnet.link || '';
+    if (!link) { UI.toast('磁力链接为空'); return; }
+
+    var btn = document.getElementById('btn-send115');
+    if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+
+    AVDB.sendMagnetTo115(link, Cfg.data.p115SavePath)
+      .then(function(){
+        UI.toast('✅ 已发送到115离线，下载完成后点击「查找文件」');
+        state.sentToast = true;
+      }).catch(function(e){
+        UI.toast('发送失败：' + UI.errText(e));
+      }).then(function(){
+        if (btn) { btn.disabled = false; btn.textContent = '📤 发送到115'; }
+      });
+  }
+
+  /* ---- 查找 115 文件 ---- */
+  function find115Files() {
+    if (!Cfg.has115Cookie()) {
+      UI.toast('请先在设置页填写 115 Cookie（UID/CID/SEID）');
+      return;
+    }
+    var el = document.getElementById('files-list');
+    var btn = document.getElementById('btn-find-file');
+    if (el) el.innerHTML = UI.loadingRow();
+    if (btn) { btn.disabled = true; btn.textContent = '搜索中…'; }
+
+    var m = state.movie;
+    var keyword = (m && (m.number || m.code || m.title)) || movieId;
+
+    P115.listFiles(keyword, null, 0)
+      .then(function(data){
+        var files = (data && data.data && data.data.list) || (data && data.list) || [];
+        renderFiles(files);
+      }).catch(function(e){
+        if (el) el.innerHTML = '<div class="hint">搜索失败：' + UI.esc(UI.errText(e)) + '</div>';
+        UI.toast('115文件查询失败：' + UI.errText(e));
+      }).then(function(){
+        if (btn) { btn.disabled = false; btn.textContent = '查找文件'; }
+      });
+  }
+
+  /* ---- 渲染 115 文件列表 ---- */
+  function renderFiles(files) {
+    var el = document.getElementById('files-list');
+    if (!el) return;
+    var videoExts = /\.(mp4|mkv|avi|ts|m2ts|mov|wmv|flv|rmvb|rm|m4v)$/i;
+    var videos = files.filter(function(f){ return videoExts.test(f.n || f.fn || ''); });
+    if (!videos.length) {
+      el.innerHTML = '<div class="hint">未找到视频文件，下载可能还未完成，稍后再试</div>';
+      return;
+    }
+    el.innerHTML = videos.map(function(f, i){
+      var name = f.n || f.fn || '未知文件';
+      var size = UI.fmtSize(f.s || f.fs || 0);
+      var pickcode = f.pc || f.pick_code || '';
+      return '<div class="file-item">' +
+        '<div class="file-name">' + UI.esc(name) + '</div>' +
+        '<div class="file-meta">' + (size || '') + (pickcode ? '' : ' · 无pick_code') + '</div>' +
+        '<div style="display:flex;gap:6px;">' +
+          (pickcode
+            ? '<button data-focus class="btn btn-success btn-sm" data-pc="' + UI.esc(pickcode) + '" data-title="' + UI.esc((state.movie && state.movie.title) || movieId) + '">▶ 直链播放</button>'
+            : '<span style="font-size:11px;color:var(--text3)">无法获取直链</span>') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    el.querySelectorAll('[data-pc]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        playFile(btn.dataset.pc, btn.dataset.title, btn);
+      });
+    });
+  }
+
+  /* ---- 直链播放 ---- */
+  function playFile(pickcode, title, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '获取直链…'; }
+    P115.getDownloadUrl(pickcode)
+      .then(function(result){
+        return Player.playDirect(result.url, title, result.ua);
+      }).catch(function(e){
+        UI.toast('播放失败：' + UI.errText(e));
+      }).then(function(){
+        if (btn) { btn.disabled = false; btn.textContent = '▶ 直链播放'; }
+      });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "apps": [
+    {
+      "appId": "com.avdb.miniapp",
+      "name": "AVDB",
+      "version": "1.0.0",
+      "versionCode": 1,
+      "url": "https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/manifest.json",
+      "icon": "",
+      "author": "graysui",
+      "description": "连接 AVDB：浏览 JavDB 在线资源、本地资源中心，一键缓存到 115，直链播放"
+    }
+  ]
+}

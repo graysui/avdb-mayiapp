@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>设置 · AVDB</title>
+<link rel="stylesheet" href="./theme.css"/>
+<style>
+#app-main { padding: 16px; }
+.test-row { display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap; }
+.test-result { font-size:12px; padding:4px 8px; border-radius:var(--radius-sm); }
+.test-result.ok    { background:rgba(52,211,153,.15); color:var(--success); }
+.test-result.error { background:rgba(248,113,113,.15); color:var(--danger); }
+</style>
+</head>
+<body>
+<div id="app-header"></div>
+<div id="app-main">
+
+  <!-- AVDB 配置 -->
+  <div class="setting-group">
+    <div class="setting-group-title">🖥 AVDB 连接</div>
+    <div class="field">
+      <label>AVDB 公网地址</label>
+      <input data-focus type="url" id="avdb-url" placeholder="http://my.gray728.top:18168" autocomplete="off"/>
+      <div class="hint">必须为公网可访问地址（小程序无法访问内网 IP）</div>
+    </div>
+    <div class="field">
+      <label>API Key</label>
+      <input data-focus type="text" id="avdb-key" placeholder="MAS2RIVNrJkFdBgC5MBf7PhTwyCFx80H" autocomplete="off"/>
+    </div>
+    <div class="test-row">
+      <button data-focus class="btn btn-sm" id="test-avdb">测试连接</button>
+      <span id="test-avdb-result"></span>
+    </div>
+  </div>
+
+  <!-- 115 Cookie -->
+  <div class="setting-group">
+    <div class="setting-group-title">🗂 115 Cookie（用于文件查找 & 直链播放）</div>
+    <div class="banner warn" style="margin-bottom:12px">
+      从浏览器登录 115.com，打开开发者工具 → Network，找任意请求的 Cookie，复制以下三个字段值。
+    </div>
+    <div class="field">
+      <label>UID</label>
+      <input data-focus type="text" id="p115-uid" placeholder="115 Cookie 中的 UID" autocomplete="off"/>
+    </div>
+    <div class="field">
+      <label>CID</label>
+      <input data-focus type="text" id="p115-cid" placeholder="115 Cookie 中的 CID" autocomplete="off"/>
+    </div>
+    <div class="field">
+      <label>SEID</label>
+      <input data-focus type="text" id="p115-seid" placeholder="115 Cookie 中的 SEID" autocomplete="off"/>
+    </div>
+    <div class="test-row">
+      <button data-focus class="btn btn-sm" id="test-115">测试Cookie</button>
+      <span id="test-115-result"></span>
+    </div>
+  </div>
+
+  <!-- 115 下载设置 -->
+  <div class="setting-group">
+    <div class="setting-group-title">📁 115 下载目录</div>
+    <div class="field">
+      <label>目标目录 CID（用于文件搜索）</label>
+      <input data-focus type="text" id="p115-folder-cid" placeholder="3511237427370919738"/>
+      <div class="hint">18+ 目录的数字 CID，搜索文件时限定在此目录</div>
+    </div>
+    <div class="field">
+      <label>AVDB 下载保存路径（save_path）</label>
+      <input data-focus type="text" id="p115-save-path" placeholder="/18+/"/>
+      <div class="hint">发送磁力到115时使用的路径，与 AVDB 下载规则中的配置一致</div>
+    </div>
+  </div>
+
+  <!-- 保存按钮 -->
+  <button data-focus class="btn btn-primary btn-full" id="save-btn">💾 保存设置</button>
+
+  <div class="divider"></div>
+
+  <!-- 关于 -->
+  <div style="text-align:center; padding:8px 0; font-size:11px; color:var(--text3);">
+    AVDB 小程序 v1.0.0 · com.avdb.miniapp
+  </div>
+
+</div>
+
+<script src="./lib.js"></script>
+<script>
+(function(){
+  'use strict';
+  var Cfg = AVDBApp.Cfg, AVDB = AVDBApp.AVDB, P115 = AVDBApp.P115, UI = AVDBApp.UI;
+
+  Cfg.load().then(function(){
+    UI.renderHeader('settings');
+    UI.initTvFocus();
+    fillForm();
+    bindEvents();
+  });
+
+  function fillForm() {
+    var d = Cfg.data;
+    setValue('avdb-url',        d.avdbUrl);
+    setValue('avdb-key',        d.avdbKey);
+    setValue('p115-uid',        d.p115Uid);
+    setValue('p115-cid',        d.p115Cid);
+    setValue('p115-seid',       d.p115Seid);
+    setValue('p115-folder-cid', d.p115FolderCid);
+    setValue('p115-save-path',  d.p115SavePath);
+  }
+
+  function getValue(id)      { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  function setValue(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; }
+
+  function bindEvents() {
+    document.getElementById('save-btn').addEventListener('click', saveSettings);
+    document.getElementById('test-avdb').addEventListener('click', testAVDB);
+    document.getElementById('test-115').addEventListener('click', test115);
+  }
+
+  function saveSettings() {
+    var btn = document.getElementById('save-btn');
+    btn.disabled = true; btn.textContent = '保存中…';
+    Cfg.save({
+      avdbUrl:       getValue('avdb-url'),
+      avdbKey:       getValue('avdb-key'),
+      p115Uid:       getValue('p115-uid'),
+      p115Cid:       getValue('p115-cid'),
+      p115Seid:      getValue('p115-seid'),
+      p115FolderCid: getValue('p115-folder-cid'),
+      p115SavePath:  getValue('p115-save-path')
+    }).then(function(){
+      UI.toast('✅ 设置已保存');
+    }).catch(function(e){
+      UI.toast('保存失败：' + UI.errText(e));
+    }).then(function(){
+      btn.disabled = false; btn.textContent = '💾 保存设置';
+    });
+  }
+
+  function testAVDB() {
+    var btn = document.getElementById('test-avdb');
+    var res = document.getElementById('test-avdb-result');
+    btn.disabled = true; btn.textContent = '测试中…';
+    res.className = 'test-result'; res.textContent = '';
+
+    // 先临时保存当前输入
+    Cfg.data.avdbUrl = getValue('avdb-url').replace(/\/+$/, '') || Cfg.data.avdbUrl;
+    Cfg.data.avdbKey = getValue('avdb-key') || Cfg.data.avdbKey;
+
+    AVDB.getStats().then(function(data){
+      var articles = data && (data.article_count || data.articles_count || data.total_articles || '–');
+      res.className = 'test-result ok';
+      res.textContent = '✅ 连接成功，资源数：' + articles;
+    }).catch(function(e){
+      res.className = 'test-result error';
+      res.textContent = '❌ ' + UI.errText(e);
+    }).then(function(){
+      btn.disabled = false; btn.textContent = '测试连接';
+    });
+  }
+
+  function test115() {
+    var btn = document.getElementById('test-115');
+    var res = document.getElementById('test-115-result');
+    btn.disabled = true; btn.textContent = '测试中…';
+    res.className = 'test-result'; res.textContent = '';
+
+    // 临时写入
+    Cfg.data.p115Uid  = getValue('p115-uid')  || Cfg.data.p115Uid;
+    Cfg.data.p115Cid  = getValue('p115-cid')  || Cfg.data.p115Cid;
+    Cfg.data.p115Seid = getValue('p115-seid') || Cfg.data.p115Seid;
+
+    if (!Cfg.has115Cookie()) {
+      res.className = 'test-result error';
+      res.textContent = '❌ UID / CID / SEID 不能为空';
+      btn.disabled = false; btn.textContent = '测试Cookie';
+      return;
+    }
+
+    P115.testCookie().then(function(data){
+      var count = data && data.data && data.data.count;
+      res.className = 'test-result ok';
+      res.textContent = '✅ Cookie 有效' + (count != null ? '，文件数：' + count : '');
+    }).catch(function(e){
+      res.className = 'test-result error';
+      res.textContent = '❌ ' + UI.errText(e);
+    }).then(function(){
+      btn.disabled = false; btn.textContent = '测试Cookie';
+    });
+  }
+})();
+</script>
+</body>
+</html>

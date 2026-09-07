@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>在线资源 · AVDB</title>
+<link rel="stylesheet" href="./theme.css"/>
+<style>
+#search-wrap { padding:10px 16px; display:flex; gap:8px; }
+#search-wrap input { flex:1; background:var(--bg3); border:1px solid var(--border);
+  border-radius:var(--radius-sm); color:var(--text); font-size:14px; padding:8px 12px; outline:none; }
+#search-wrap input:focus { border-color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="app-header"></div>
+
+<!-- Tab Bar -->
+<div class="tab-bar" id="tab-bar">
+  <button data-focus class="tab-btn on" data-tab="latest">最新</button>
+  <button data-focus class="tab-btn" data-tab="daily">日榜</button>
+  <button data-focus class="tab-btn" data-tab="weekly">周榜</button>
+  <button data-focus class="tab-btn" data-tab="monthly">月榜</button>
+  <button data-focus class="tab-btn" data-tab="recommend">推荐</button>
+  <button data-focus class="tab-btn" data-tab="search">搜索</button>
+</div>
+
+<!-- 搜索框（仅搜索tab显示）-->
+<div id="search-wrap" style="display:none">
+  <input id="search-input" type="text" placeholder="番号 / 标题 / 演员…" autocomplete="off"/>
+  <button data-focus class="btn btn-primary btn-sm" id="search-btn">搜索</button>
+</div>
+
+<div id="app-main">
+  <div class="loading-row"><div class="spinner"></div>加载中…</div>
+</div>
+
+<script src="./lib.js"></script>
+<script>
+(function(){
+  'use strict';
+  var Cfg = AVDBApp.Cfg, AVDB = AVDBApp.AVDB, UI = AVDBApp.UI;
+  var main = document.getElementById('app-main');
+  var currentTab = 'latest';
+  var currentPage = 1;
+  var loading = false;
+  var hasMore = true;
+
+  Cfg.load().then(function(){
+    UI.renderHeader('online');
+    UI.initTvFocus();
+    if (!UI.checkConfig(main)) return;
+    initTabs();
+    loadTab('latest', 1, true);
+  });
+
+  function initTabs() {
+    document.getElementById('tab-bar').querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('on'); });
+        btn.classList.add('on');
+        var tab = btn.dataset.tab;
+        document.getElementById('search-wrap').style.display = tab === 'search' ? 'flex' : 'none';
+        if (tab !== 'search') loadTab(tab, 1, true);
+        else { currentTab = 'search'; main.innerHTML = '<div class="hint">输入关键词后搜索</div>'; }
+      });
+    });
+    var si = document.getElementById('search-input');
+    document.getElementById('search-btn').addEventListener('click', function(){
+      var q = si.value.trim();
+      if (!q) return;
+      doSearch(q, 1, true);
+    });
+    si.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') document.getElementById('search-btn').click();
+    });
+    // 滚动加载更多
+    window.addEventListener('scroll', function(){
+      if (loading || !hasMore) return;
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+        if (currentTab === 'search') {
+          var q = document.getElementById('search-input').value.trim();
+          if (q) doSearch(q, currentPage + 1, false);
+        } else {
+          loadTab(currentTab, currentPage + 1, false);
+        }
+      }
+    });
+  }
+
+  function loadTab(tab, page, reset) {
+    currentTab = tab;
+    if (loading) return;
+    loading = true;
+    if (reset) { currentPage = 1; hasMore = true; main.innerHTML = UI.skeleton(12, 'grid'); }
+
+    var p;
+    if (tab === 'latest')    p = AVDB.getLatest(page, 24);
+    else if (tab === 'daily')   p = AVDB.getRankings('daily');
+    else if (tab === 'weekly')  p = AVDB.getRankings('weekly');
+    else if (tab === 'monthly') p = AVDB.getRankings('monthly');
+    else if (tab === 'recommend') p = AVDB.getRecommend();
+    else return;
+
+    p.then(function(data){
+      currentPage = page;
+      var list = normalizeMovies(data, tab);
+      if (list.length < 20) hasMore = false;
+      if (reset) main.innerHTML = '';
+      if (!list.length && reset) { main.innerHTML = '<div class="hint">暂无内容</div>'; return; }
+      appendCards(list);
+    }).catch(function(e){
+      if (reset) main.innerHTML = UI.stateHtml('⚠️', '加载失败', UI.esc(UI.errText(e)),
+        '<button data-focus class="btn btn-primary" onclick="location.reload()">重试</button>');
+      else UI.toast('加载失败：' + UI.errText(e));
+    }).then(function(){ loading = false; });
+  }
+
+  function doSearch(q, page, reset) {
+    if (loading) return;
+    loading = true;
+    if (reset) { currentPage = 1; hasMore = true; main.innerHTML = UI.skeleton(12, 'grid'); }
+
+    AVDB.search(q, page, 24).then(function(data){
+      currentPage = page;
+      var list = normalizeMovies(data, 'search');
+      if (list.length < 20) hasMore = false;
+      if (reset) main.innerHTML = '';
+      if (!list.length && reset) { main.innerHTML = '<div class="hint">没有找到「' + UI.esc(q) + '」相关结果</div>'; return; }
+      appendCards(list);
+    }).catch(function(e){
+      if (reset) main.innerHTML = UI.stateHtml('⚠️', '搜索失败', UI.esc(UI.errText(e)));
+      else UI.toast('搜索失败：' + UI.errText(e));
+    }).then(function(){ loading = false; });
+  }
+
+  function normalizeMovies(data, tab) {
+    if (!data) return [];
+    var list = Array.isArray(data) ? data : (data.list || data.items || data.movies || data.results || []);
+    return list.map(function(m){
+      return {
+        _id:    m.id || m.movie_id || '',
+        title:  m.title || m.number || '',
+        number: m.number || '',
+        cover:  m.cover || m.preview_url || '',
+        score:  m.score || ''
+      };
+    });
+  }
+
+  function appendCards(list) {
+    var grid = main.querySelector('.grid');
+    if (!grid) { main.innerHTML = '<div class="grid"></div>'; grid = main.querySelector('.grid'); }
+    var frag = document.createDocumentFragment();
+    list.forEach(function(item){
+      var btn = document.createElement('button');
+      btn.className = 'card';
+      btn.setAttribute('data-focus', '');
+      btn.innerHTML = UI.posterHtml(item) +
+        '<div class="card-name">' + UI.esc(item.title) + '</div>' +
+        (item.number ? '<div class="card-sub">' + UI.esc(item.number) + '</div>' : '');
+      btn.addEventListener('click', function(){ UI.goMovie(item._id); });
+      frag.appendChild(btn);
+    });
+    grid.appendChild(frag);
+  }
+})();
+</script>
+</body>
+</html>
