@@ -42,35 +42,53 @@
     function subscribe(fn) { listeners.push(fn); }
     function unsubscribe(fn) { listeners = listeners.filter(function (f) { return f !== fn; }); }
 
-    /* ---- 拦截 ant.request，自动记录每次网络调用 ---- */
+    /* ---- 拦截 fetch & ant.request，自动记录每次网络调用 ---- */
     function installInterceptor() {
-      if (typeof window.ant === 'undefined' || !ant.request || ant.request.__logged) return;
-      var _orig = ant.request.bind(ant);
-      ant.request = function (opts) {
-        var label = (opts.method || 'GET') + ' ' + (opts.url || '');
-        var t0 = Date.now();
-        info('NET', '→ ' + label);
-        return _orig(opts).then(function (res) {
-          var ms = Date.now() - t0;
-          var preview = '';
-          try {
-            var body = typeof res.data === 'string' ? res.data.slice(0, 120) : JSON.stringify(res.data).slice(0, 120);
-            preview = body;
-          } catch (e) {}
-          info('NET', '← ' + res.statusCode + ' ' + label + ' [' + ms + 'ms] ' + preview);
-          return res;
-        }, function (e) {
-          var ms = Date.now() - t0;
-          error('NET', '✗ ' + label + ' [' + ms + 'ms] ' + (e && e.message || String(e)));
-          throw e;
-        });
-      };
-      ant.request.__logged = true;
-      info('LOG', '请求拦截器已安装');
+      // 优先拦截 fetch（实际使用的网络层）
+      if (window.fetch && !window.fetch.__logged) {
+        var _origFetch = window.fetch.bind(window);
+        window.fetch = function (url, opts) {
+          var label = ((opts && opts.method) || 'GET') + ' ' + url;
+          var t0 = Date.now();
+          info('NET', '→ ' + label);
+          return _origFetch(url, opts).then(function (res) {
+            var ms = Date.now() - t0;
+            info('NET', '← ' + res.status + ' ' + label + ' [' + ms + 'ms]');
+            return res;
+          }, function (e) {
+            var ms = Date.now() - t0;
+            error('NET', '✗ ' + label + ' [' + ms + 'ms] ' + (e && e.message || String(e)));
+            throw e;
+          });
+        };
+        window.fetch.__logged = true;
+        info('LOG', 'fetch拦截器已安装');
+      }
+      // 同时拦截 ant.request（供诊断页测试用）
+      if (typeof window.ant !== 'undefined' && ant.request && !ant.request.__logged) {
+        var _orig = ant.request.bind(ant);
+        ant.request = function (opts) {
+          var label = (opts.method || 'GET') + ' ' + (opts.url || '');
+          var t0 = Date.now();
+          info('NET', '[ant]→ ' + label);
+          return _orig(opts).then(function (res) {
+            var ms = Date.now() - t0;
+            info('NET', '[ant]← ' + res.statusCode + ' [' + ms + 'ms]');
+            return res;
+          }, function (e) {
+            var ms = Date.now() - t0;
+            error('NET', '[ant]✗ ' + label + ' [' + ms + 'ms] ' + (e && e.message || String(e)));
+            throw e;
+          });
+        };
+        ant.request.__logged = true;
+      }
     }
 
     return { info: info, warn: warn, error: error, getAll: getAll, clear: clear, subscribe: subscribe, unsubscribe: unsubscribe, installInterceptor: installInterceptor };
   })();
+
+
 
 
   /* ================================================================
@@ -142,33 +160,34 @@
       if (options.form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
       Object.assign(headers, options.headers || {});
 
-      return ant.request({
-        url: url,
+      var body;
+      if (options.json) body = JSON.stringify(options.json);
+      else if (options.form || options.data) body = options.form || options.data;
+
+      return fetch(url, {
         method: options.method || 'GET',
         headers: headers,
-        data: options.json
-          ? JSON.stringify(options.json)
-          : (options.form || options.data || undefined),
-        timeout: 25000
+        body: body || undefined,
+        mode: 'cors',
+        cache: 'no-cache',
+        credentials: 'omit',
+        redirect: 'follow'
       }).then(function (res) {
-        if (res.statusCode >= 400) {
-          var msg = 'HTTP ' + res.statusCode;
-          try {
-            var b = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-            if (b && b.message) msg = b.message;
-          } catch (e) {}
-          var err = new Error(msg);
-          err.status = res.statusCode;
-          throw err;
+        if (res.status >= 400) {
+          return res.text().then(function (text) {
+            var msg = 'HTTP ' + res.status;
+            try { var b = JSON.parse(text); if (b && b.message) msg = b.message; } catch (e) {}
+            var err = new Error(msg); err.status = res.status; throw err;
+          });
         }
-        var body = res.data;
-        if (typeof body === 'string') {
-          try { body = JSON.parse(body); } catch (e) {}
-        }
-        // 大多数业务接口包装在 data 字段里
-        return (body && body.data !== undefined) ? body.data : body;
+        return res.text().then(function (text) {
+          var body2;
+          try { body2 = JSON.parse(text); } catch (e) { body2 = text; }
+          return (body2 && body2.data !== undefined) ? body2.data : body2;
+        });
       });
     }
+
 
     /* ---------- JavDB 在线资源 ---------- */
     function getLatest(page, limit, filterBy) {
@@ -300,23 +319,26 @@
       };
       Object.assign(headers, options.headers || {});
 
-      return ant.request({
-        url: url,
+      return fetch(url, {
         method: options.method || 'GET',
         headers: headers,
-        data: options.data,
-        timeout: 20000
+        body: options.data || undefined,
+        mode: 'cors',
+        cache: 'no-cache',
+        credentials: 'omit',
+        redirect: 'follow'
       }).then(function (res) {
-        var body = res.data;
-        if (typeof body === 'string') {
-          try { body = JSON.parse(body); } catch (e) {}
-        }
+        return res.text();
+      }).then(function (text) {
+        var body;
+        try { body = JSON.parse(text); } catch (e) { body = {}; }
         if (body && body.state === false) {
           throw new Error(body.error || body.message || '115接口返回错误');
         }
         return body;
       });
     }
+
 
     /**
      * 搜索 / 列出文件
