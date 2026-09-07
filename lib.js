@@ -80,9 +80,7 @@
     var KEYS = {
       AVDB_URL:        'avdb_url',
       AVDB_KEY:        'avdb_key',
-      P115_UID:        'p115_uid',
-      P115_CID:        'p115_cid',
-      P115_SEID:       'p115_seid',
+      P115_COOKIE:     'p115_cookie',
       P115_FOLDER_CID: 'p115_folder_cid',
       P115_SAVE_PATH:  'p115_save_path'
     };
@@ -90,9 +88,7 @@
     var data = {
       avdbUrl:       'http://my.gray728.top:18168',
       avdbKey:       'MAS2RIVNrJkFdBgC5MBf7PhTwyCFx80H',
-      p115Uid:       '',
-      p115Cid:       '',
-      p115Seid:      '',
+      p115Cookie:    '',
       p115FolderCid: '3511237427370919738',
       p115SavePath:  '/18+/'
     };
@@ -101,41 +97,36 @@
       return Promise.all([
         ant.storage.get(KEYS.AVDB_URL),
         ant.storage.get(KEYS.AVDB_KEY),
-        ant.storage.get(KEYS.P115_UID),
-        ant.storage.get(KEYS.P115_CID),
-        ant.storage.get(KEYS.P115_SEID),
+        ant.storage.get(KEYS.P115_COOKIE),
         ant.storage.get(KEYS.P115_FOLDER_CID),
         ant.storage.get(KEYS.P115_SAVE_PATH)
       ]).then(function (vals) {
         if (vals[0]) data.avdbUrl       = vals[0].replace(/\/+$/, '');
         if (vals[1]) data.avdbKey       = vals[1];
-        if (vals[2]) data.p115Uid       = vals[2];
-        if (vals[3]) data.p115Cid       = vals[3];
-        if (vals[4]) data.p115Seid      = vals[4];
-        if (vals[5]) data.p115FolderCid = vals[5];
-        if (vals[6]) data.p115SavePath  = vals[6];
+        if (vals[2]) data.p115Cookie    = vals[2];
+        if (vals[3]) data.p115FolderCid = vals[3];
+        if (vals[4]) data.p115SavePath  = vals[4];
         return data;
       });
     }
 
     function save(patch) {
       var tasks = [];
-      if (patch.avdbUrl       !== undefined) { data.avdbUrl       = patch.avdbUrl.replace(/\/+$/, '');  tasks.push(ant.storage.set(KEYS.AVDB_URL,        data.avdbUrl)); }
+      if (patch.avdbUrl       !== undefined) { data.avdbUrl       = patch.avdbUrl.replace(/\/+$/, ''); tasks.push(ant.storage.set(KEYS.AVDB_URL,        data.avdbUrl)); }
       if (patch.avdbKey       !== undefined) { data.avdbKey       = patch.avdbKey;       tasks.push(ant.storage.set(KEYS.AVDB_KEY,        data.avdbKey)); }
-      if (patch.p115Uid       !== undefined) { data.p115Uid       = patch.p115Uid;       tasks.push(ant.storage.set(KEYS.P115_UID,        data.p115Uid)); }
-      if (patch.p115Cid       !== undefined) { data.p115Cid       = patch.p115Cid;       tasks.push(ant.storage.set(KEYS.P115_CID,        data.p115Cid)); }
-      if (patch.p115Seid      !== undefined) { data.p115Seid      = patch.p115Seid;      tasks.push(ant.storage.set(KEYS.P115_SEID,       data.p115Seid)); }
+      if (patch.p115Cookie    !== undefined) { data.p115Cookie    = patch.p115Cookie;    tasks.push(ant.storage.set(KEYS.P115_COOKIE,     data.p115Cookie)); }
       if (patch.p115FolderCid !== undefined) { data.p115FolderCid = patch.p115FolderCid; tasks.push(ant.storage.set(KEYS.P115_FOLDER_CID, data.p115FolderCid)); }
       if (patch.p115SavePath  !== undefined) { data.p115SavePath  = patch.p115SavePath;  tasks.push(ant.storage.set(KEYS.P115_SAVE_PATH,  data.p115SavePath)); }
       return Promise.all(tasks).then(function () { return data; });
     }
 
     function has115Cookie() {
-      return !!(data.p115Uid && data.p115Cid && data.p115Seid);
+      return !!(data.p115Cookie && data.p115Cookie.indexOf('UID=') >= 0);
     }
 
     return { data: data, load: load, save: save, has115Cookie: has115Cookie };
   })();
+
 
   /* ================================================================
      AVDB — HTTP API 客户端
@@ -295,10 +286,9 @@
     var UA_MOBILE = 'Mozilla/5.0 (Linux; Android 11; M2007J3SC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
     function cookie() {
-      return 'UID=' + Cfg.data.p115Uid +
-             '; CID=' + Cfg.data.p115Cid +
-             '; SEID=' + Cfg.data.p115Seid;
+      return Cfg.data.p115Cookie || '';
     }
+
 
     function req(url, opts) {
       var options = opts || {};

@@ -35,23 +35,18 @@
     </div>
   </div>
 
-  <!-- 115 Cookie -->
+  <!-- 115 Cookie（单栏） -->
   <div class="setting-group">
-    <div class="setting-group-title">🗂 115 Cookie（用于文件查找 & 直链播放）</div>
+    <div class="setting-group-title">🗂 115 Cookie</div>
     <div class="banner warn" style="margin-bottom:12px">
-      从浏览器登录 115.com，打开开发者工具 → Network，找任意请求的 Cookie，复制以下三个字段值。
+      浏览器登录 115.com → 打开 DevTools（F12）→ Network → 随便点一个请求 → 复制 Request Headers 里完整的 Cookie 值粘贴到下方。
     </div>
     <div class="field">
-      <label>UID</label>
-      <input data-focus type="text" id="p115-uid" placeholder="115 Cookie 中的 UID" autocomplete="off"/>
-    </div>
-    <div class="field">
-      <label>CID</label>
-      <input data-focus type="text" id="p115-cid" placeholder="115 Cookie 中的 CID" autocomplete="off"/>
-    </div>
-    <div class="field">
-      <label>SEID</label>
-      <input data-focus type="text" id="p115-seid" placeholder="115 Cookie 中的 SEID" autocomplete="off"/>
+      <label>Cookie（完整字符串）</label>
+      <textarea data-focus id="p115-cookie" rows="3"
+        placeholder="UID=****; CID=****; SEID=****; KID=****"
+        autocomplete="off" spellcheck="false"></textarea>
+      <div class="hint">格式：UID=…; CID=…; SEID=…; KID=…（直接粘贴整段即可）</div>
     </div>
     <div class="test-row">
       <button data-focus class="btn btn-sm" id="test-115">测试Cookie</button>
@@ -74,19 +69,19 @@
     </div>
   </div>
 
-  <!-- 保存按钮 -->
+  <!-- 保存 -->
   <button data-focus class="btn btn-primary btn-full" id="save-btn">💾 保存设置</button>
 
   <div class="divider"></div>
 
-  <!-- 诊断 -->
+  <!-- 诊断入口 -->
   <div style="display:flex; justify-content:center; gap:12px; padding:4px 0 12px;">
     <a data-focus class="btn btn-ghost btn-sm" href="debug.html">🔍 网络诊断 / 日志</a>
   </div>
 
   <!-- 关于 -->
   <div style="text-align:center; padding:4px 0 8px; font-size:11px; color:var(--text3);">
-    AVDB 小程序 v1.0.1 · com.avdb.miniapp
+    AVDB 小程序 v1.0.2 · com.avdb.miniapp
   </div>
 
 </div>
@@ -108,9 +103,7 @@
     var d = Cfg.data;
     setValue('avdb-url',        d.avdbUrl);
     setValue('avdb-key',        d.avdbKey);
-    setValue('p115-uid',        d.p115Uid);
-    setValue('p115-cid',        d.p115Cid);
-    setValue('p115-seid',       d.p115Seid);
+    setValue('p115-cookie',     d.p115Cookie);
     setValue('p115-folder-cid', d.p115FolderCid);
     setValue('p115-save-path',  d.p115SavePath);
   }
@@ -130,9 +123,7 @@
     Cfg.save({
       avdbUrl:       getValue('avdb-url'),
       avdbKey:       getValue('avdb-key'),
-      p115Uid:       getValue('p115-uid'),
-      p115Cid:       getValue('p115-cid'),
-      p115Seid:      getValue('p115-seid'),
+      p115Cookie:    getValue('p115-cookie'),
       p115FolderCid: getValue('p115-folder-cid'),
       p115SavePath:  getValue('p115-save-path')
     }).then(function(){
@@ -145,25 +136,22 @@
   }
 
   function testAVDB() {
-    var btn = document.getElementById('test-avdb');
+    var btn = document.getElementById('btn-test-avdb') || document.getElementById('test-avdb');
     var res = document.getElementById('test-avdb-result');
     btn.disabled = true; btn.textContent = '测试中…';
     res.className = 'test-result'; res.textContent = '';
-
-    // 先临时保存当前输入
-    Cfg.data.avdbUrl = getValue('avdb-url').replace(/\/+$/, '') || Cfg.data.avdbUrl;
+    // 临时写入当前输入
+    Cfg.data.avdbUrl = (getValue('avdb-url') || Cfg.data.avdbUrl).replace(/\/+$/, '');
     Cfg.data.avdbKey = getValue('avdb-key') || Cfg.data.avdbKey;
 
     AVDB.getStats().then(function(data){
-      var articles = data && (data.article_count || data.articles_count || data.total_articles || '–');
+      var n = data && (data.article_count || data.articles_count || data.total_articles || '?');
       res.className = 'test-result ok';
-      res.textContent = '✅ 连接成功，资源数：' + articles;
+      res.textContent = '✅ 连接成功，资源数：' + n;
     }).catch(function(e){
       res.className = 'test-result error';
       res.textContent = '❌ ' + UI.errText(e);
-    }).then(function(){
-      btn.disabled = false; btn.textContent = '测试连接';
-    });
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试连接'; });
   }
 
   function test115() {
@@ -172,28 +160,24 @@
     btn.disabled = true; btn.textContent = '测试中…';
     res.className = 'test-result'; res.textContent = '';
 
-    // 临时写入
-    Cfg.data.p115Uid  = getValue('p115-uid')  || Cfg.data.p115Uid;
-    Cfg.data.p115Cid  = getValue('p115-cid')  || Cfg.data.p115Cid;
-    Cfg.data.p115Seid = getValue('p115-seid') || Cfg.data.p115Seid;
-
-    if (!Cfg.has115Cookie()) {
+    var raw = getValue('p115-cookie');
+    if (!raw || raw.indexOf('UID=') < 0) {
       res.className = 'test-result error';
-      res.textContent = '❌ UID / CID / SEID 不能为空';
+      res.textContent = '❌ Cookie 不含 UID= 字段';
       btn.disabled = false; btn.textContent = '测试Cookie';
       return;
     }
+    // 临时写入
+    Cfg.data.p115Cookie = raw;
 
     P115.testCookie().then(function(data){
-      var count = data && data.data && data.data.count;
+      var count = data && data.data && (data.data.count || data.data.total);
       res.className = 'test-result ok';
       res.textContent = '✅ Cookie 有效' + (count != null ? '，文件数：' + count : '');
     }).catch(function(e){
       res.className = 'test-result error';
       res.textContent = '❌ ' + UI.errText(e);
-    }).then(function(){
-      btn.disabled = false; btn.textContent = '测试Cookie';
-    });
+    }).then(function(){ btn.disabled = false; btn.textContent = '测试Cookie'; });
   }
 })();
 </script>
