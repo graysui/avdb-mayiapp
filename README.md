@@ -10,20 +10,12 @@
 
 ## ⚡ 安装
 
-### 方式一：从链接安装（推荐）
+### 从链接安装
 
 蚂蚁App → 小程序 → 右上角 **+** → **从链接安装** → 粘贴以下地址：
 
 ```
 https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/manifest.json
-```
-
-### 方式二：添加市场源
-
-蚂蚁App → **市场** Tab → 右上角 **+** → 添加市场地址：
-
-```
-https://cdn.jsdelivr.net/gh/graysui/avdb-mayiapp@main/market.json
 ```
 
 ---
